@@ -1,0 +1,46 @@
+name: reusable-node-ci
+
+# Lint, tests y cobertura para servicios Node/TypeScript.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        type: string
+        default: "22"
+      working-directory:
+        type: string
+        default: .
+      coverage-threshold:
+        description: Cobertura mínima de líneas (%).
+        type: number
+        default: 80
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: npm
+          cache-dependency-path: ${{ inputs.working-directory }}/package-lock.json
+
+      - run: npm ci
+      - run: npm run lint --if-present
+      - run: npm test -- --coverage --coverageReporters=json-summary --coverageReporters=text
+
+      - name: cobertura mínima
+        run: |
+          pct=$(jq '.total.lines.pct' coverage/coverage-summary.json)
+          echo "Cobertura de líneas: ${pct}% (mínimo ${{ inputs.coverage-threshold }}%)"
+          awk -v p="$pct" -v t="${{ inputs.coverage-threshold }}" 'BEGIN { exit !(p >= t) }' \
+            || { echo "::error::Cobertura ${pct}% por debajo de ${{ inputs.coverage-threshold }}%"; exit 1; }
