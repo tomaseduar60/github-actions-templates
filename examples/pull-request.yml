@@ -1,0 +1,30 @@
+# .github/workflows/pull-request.yml en el repo del servicio.
+# En cada PR: tests + análisis estático en paralelo, y la imagen solo si ambos pasan.
+name: pull-request
+
+on:
+  pull_request:
+    branches: [develop, qa, main]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  ci:
+    uses: tomaseduar60/github-actions-templates/.github/workflows/reusable-node-ci.yml@v1
+    with:
+      coverage-threshold: 80
+
+  static-analysis:
+    uses: tomaseduar60/github-actions-templates/.github/workflows/reusable-static-analysis.yml@v1
+
+  image:
+    needs: [ci, static-analysis]
+    uses: tomaseduar60/github-actions-templates/.github/workflows/reusable-build-push.yml@v1
+    with:
+      image: us-docker.pkg.dev/my-project/apps/orders-api
+      push: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    secrets:
+      WIF_PROVIDER: ${{ secrets.WIF_PROVIDER }}
+      WIF_SERVICE_ACCOUNT: ${{ secrets.WIF_SERVICE_ACCOUNT }}

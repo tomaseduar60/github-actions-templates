@@ -1,0 +1,27 @@
+# .github/workflows/deploy.yml en el repo del servicio.
+# El push a develop/qa/main (merge del PR) despliega la imagen que construyó ese PR.
+name: deploy
+
+on:
+  push:
+    branches: [develop, qa, main]
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: read
+
+jobs:
+  deploy:
+    uses: tomaseduar60/github-actions-templates/.github/workflows/reusable-deploy-gke.yml@v1
+    with:
+      environment: ${{ github.ref_name == 'main' && 'production' || github.ref_name }}
+      image: us-docker.pkg.dev/my-project/apps/orders-api
+      cluster: gke-${{ github.ref_name == 'main' && 'prd' || github.ref_name }}
+      location: us-central1
+      namespace: orders
+      release: orders-api
+      values-file: chart/values-${{ github.ref_name }}.yaml
+    secrets:
+      WIF_PROVIDER: ${{ secrets.WIF_PROVIDER }}
+      WIF_SERVICE_ACCOUNT: ${{ secrets.WIF_SERVICE_ACCOUNT }}
