@@ -1,0 +1,40 @@
+name: resolve-artifact-sha
+description: >
+  Encuentra el SHA de la imagen que se construyó en el PR que originó un push.
+  Así el deploy promueve exactamente la imagen ya probada, en vez de reconstruir.
+
+inputs:
+  github-token:
+    description: Token con permiso de lectura sobre pull requests.
+    required: true
+  sha:
+    description: Commit del push (por defecto, github.sha).
+    required: false
+    default: ""
+  registry-image:
+    description: Imagen sin tag (ej. us-docker.pkg.dev/proyecto/apps/api). Si se indica, se valida que el tag exista.
+    required: false
+    default: ""
+
+outputs:
+  pr-number:
+    description: Número del PR mergeado que generó el push.
+    value: ${{ steps.resolve.outputs.pr-number }}
+  artifact-sha:
+    description: SHA del último commit del PR (el tag con el que se construyó la imagen).
+    value: ${{ steps.resolve.outputs.artifact-sha }}
+  image:
+    description: Imagen completa con tag, si se pasó registry-image.
+    value: ${{ steps.resolve.outputs.image }}
+
+runs:
+  using: composite
+  steps:
+    - id: resolve
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        SHA: ${{ inputs.sha || github.sha }}
+        REPO: ${{ github.repository }}
+        REGISTRY_IMAGE: ${{ inputs.registry-image }}
+      run: bash "${{ github.action_path }}/resolve.sh"
