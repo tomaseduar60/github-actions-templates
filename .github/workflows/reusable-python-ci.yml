@@ -1,0 +1,39 @@
+name: reusable-python-ci
+
+# Lint con ruff, tipos con mypy y tests con pytest para servicios Python.
+
+on:
+  workflow_call:
+    inputs:
+      python-version:
+        type: string
+        default: "3.12"
+      working-directory:
+        type: string
+        default: .
+      coverage-threshold:
+        type: number
+        default: 80
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python-version }}
+          cache: pip
+
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy .
+      - run: pytest --cov --cov-report=term-missing --cov-fail-under=${{ inputs.coverage-threshold }}
