@@ -1,0 +1,84 @@
+name: reusable-build-push
+
+# Build de la imagen en el PR, etiquetada con el head SHA del PR.
+# Ese tag es el que después encuentra resolve-artifact-sha al hacer el deploy:
+# lo que se despliega es exactamente lo que se probó.
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Imagen sin tag (ej. us-docker.pkg.dev/mi-proyecto/apps/api).
+        type: string
+        required: true
+      context:
+        description: Contexto del build.
+        type: string
+        default: .
+      dockerfile:
+        type: string
+        default: Dockerfile
+      push:
+        description: Si es false, solo construye (útil en PRs de forks).
+        type: boolean
+        default: true
+    secrets:
+      WIF_PROVIDER:
+        required: true
+      WIF_SERVICE_ACCOUNT:
+        required: true
+    outputs:
+      image:
+        description: Imagen publicada con tag.
+        value: ${{ jobs.build.outputs.image }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: meta
+        name: tag de la imagen
+        run: |
+          sha="${{ github.event.pull_request.head.sha || github.sha }}"
+          echo "image=${{ inputs.image }}:${sha}" >> "$GITHUB_OUTPUT"
+          echo "registry=$(cut -d/ -f1 <<<"${{ inputs.image }}")" >> "$GITHUB_OUTPUT"
+
+      - uses: tomaseduar60/github-actions-templates/actions/gcp-auth@v1
+        if: inputs.push
+        with:
+          workload-identity-provider: ${{ secrets.WIF_PROVIDER }}
+          service-account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+          registry-host: ${{ steps.meta.outputs.registry }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          push: ${{ inputs.push }}
+          tags: ${{ steps.meta.outputs.image }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha || github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: escaneo de la imagen
+        if: inputs.push
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
