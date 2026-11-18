@@ -69,4 +69,9 @@ export FAKE_PULLS='[{"number":7,"merged_at":"2024-05-01T10:00:00Z","head":{"sha"
 if bash "$script" >/dev/null 2>&1; then echo "FAIL - imagen faltante debería fallar"; fails=$((fails + 1)); else echo "ok   - imagen faltante falla"; fi
 
 echo
-[[ $fails -eq 0 ]] && echo "todos los tests pasaron" || { echo "$fails test(s) fallaron"; exit 1; }
+if [[ $fails -eq 0 ]]; then
+  echo "todos los tests pasaron"
+else
+  echo "$fails test(s) fallaron"
+  exit 1
+fi
