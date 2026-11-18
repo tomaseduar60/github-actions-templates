@@ -1,0 +1,29 @@
+name: gcp-auth
+description: Autenticación a GCP con Workload Identity Federation (sin llaves JSON) y login a Artifact Registry.
+
+inputs:
+  workload-identity-provider:
+    description: projects/<número>/locations/global/workloadIdentityPools/<pool>/providers/<provider>
+    required: true
+  service-account:
+    description: Service account a impersonar.
+    required: true
+  registry-host:
+    description: Host de Artifact Registry (ej. us-docker.pkg.dev). Vacío = no hace docker login.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.workload-identity-provider }}
+        service_account: ${{ inputs.service-account }}
+        token_format: access_token
+
+    - uses: google-github-actions/setup-gcloud@v2
+
+    - if: inputs.registry-host != ''
+      shell: bash
+      run: gcloud auth configure-docker "${{ inputs.registry-host }}" --quiet
