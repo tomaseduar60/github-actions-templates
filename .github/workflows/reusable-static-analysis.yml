@@ -1,0 +1,52 @@
+name: reusable-static-analysis
+
+# Análisis estático que no depende del lenguaje: secretos, Dockerfile y vulnerabilidades
+# en dependencias. Pensado para correr en paralelo con los tests.
+
+on:
+  workflow_call:
+    inputs:
+      dockerfile:
+        description: Ruta del Dockerfile a revisar con hadolint.
+        type: string
+        default: Dockerfile
+      trivy-severity:
+        description: Severidades que hacen fallar el job.
+        type: string
+        default: CRITICAL,HIGH
+
+permissions:
+  contents: read
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 \
+            detect --source /repo --redact --verbose --exit-code 1
+
+  hadolint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ inputs.dockerfile }}
+          failure-threshold: warning
+
+  trivy-fs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: ${{ inputs.trivy-severity }}
+          ignore-unfixed: true
+          exit-code: "1"
