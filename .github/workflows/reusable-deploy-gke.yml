@@ -1,0 +1,106 @@
+name: reusable-deploy-gke
+
+# Deploy a GKE en el push a una rama de ambiente (develop, qa, main).
+# No reconstruye: usa resolve-artifact-sha para encontrar la imagen del PR mergeado
+# y la promueve con Helm. El environment de GitHub aplica aprobaciones y secretos por ambiente.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: Environment de GitHub (develop, qa, production).
+        type: string
+        required: true
+      image:
+        description: Imagen sin tag.
+        type: string
+        required: true
+      cluster:
+        type: string
+        required: true
+      location:
+        description: Región o zona del cluster.
+        type: string
+        required: true
+      namespace:
+        type: string
+        required: true
+      release:
+        description: Nombre del release de Helm.
+        type: string
+        required: true
+      chart:
+        description: Ruta o referencia del chart.
+        type: string
+        default: ./chart
+      values-file:
+        description: Values del ambiente (ej. chart/values-qa.yaml).
+        type: string
+        required: true
+      timeout:
+        type: string
+        default: 5m
+    secrets:
+      WIF_PROVIDER:
+        required: true
+      WIF_SERVICE_ACCOUNT:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: read
+
+concurrency:
+  group: deploy-${{ inputs.environment }}-${{ inputs.release }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: registry
+        run: echo "host=$(cut -d/ -f1 <<<"${{ inputs.image }}")" >> "$GITHUB_OUTPUT"
+
+      - uses: tomaseduar60/github-actions-templates/actions/gcp-auth@v1
+        with:
+          workload-identity-provider: ${{ secrets.WIF_PROVIDER }}
+          service-account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+          registry-host: ${{ steps.registry.outputs.host }}
+
+      - id: artifact
+        uses: tomaseduar60/github-actions-templates/actions/resolve-artifact-sha@v1
+        with:
+          github-token: ${{ github.token }}
+          registry-image: ${{ inputs.image }}
+
+      - uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ inputs.cluster }}
+          location: ${{ inputs.location }}
+
+      - uses: azure/setup-helm@v4
+
+      - name: helm upgrade
+        run: |
+          helm upgrade --install "${{ inputs.release }}" "${{ inputs.chart }}" \
+            --namespace "${{ inputs.namespace }}" \
+            --values "${{ inputs.values-file }}" \
+            --set image.repository="${{ inputs.image }}" \
+            --set image.tag="${{ steps.artifact.outputs.artifact-sha }}" \
+            --atomic --wait --timeout "${{ inputs.timeout }}"
+
+      - name: resumen
+        if: always()
+        run: |
+          {
+            echo "### Deploy ${{ inputs.release }} -> ${{ inputs.environment }}"
+            echo "| | |"
+            echo "|---|---|"
+            echo "| PR | #${{ steps.artifact.outputs.pr-number }} |"
+            echo "| Imagen | \`${{ steps.artifact.outputs.image }}\` |"
+            echo "| Cluster | ${{ inputs.cluster }} / ${{ inputs.namespace }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
